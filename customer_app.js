@@ -3,8 +3,9 @@ const mongoose = require('mongoose');            // MongoDB ODM library
 const Customers = require('./customer');         // Imported MongoDB model for 'customers'
 const express = require('express');              // Express.js web framework
 const bodyParser = require('body-parser');       // Middleware for parsing JSON requests
-const path = require('path');                    // Node.js path module for working with file and directory paths
 const session = require('express-session');
+const path = require('path');                    // Node.js path module for working with file and directory paths
+const { ValidationError, InvalidUserError, AuthenticationFailed } = require('./errors/CustomError');
 const bcrypt = require("bcrypt")
 const saltRounds = 5
 const password = "admin"
@@ -21,12 +22,11 @@ app.use(session({
 	genid: () => uuid.v4()
 }));
 
-
 // Setting the port number for the server
 const port = 3000;
 
 // MongoDB connection URI and database name
-const uri =  "mongodb://root:VQGUI58BLXV7HTF3aqmE2LeR@172.21.106.182:27017";
+const uri =  "mongodb://root:m3nyNzeSGGseKYNG6ewLjIUj@172.21.240.208:27017";
 mongoose.connect(uri, {'dbName': 'customerDB'});
 
 // Middleware to parse JSON requests
@@ -76,30 +76,32 @@ app.get('/api/logout', async (req, res) => {
       });
 });
 
-
 // POST endpoint for adding a new customer
-app.post('/api/add_customer', async (req, res) => {
+app.post('/api/add_customer', async (req, res, next) => {
     const data = req.body;
-
+    const age = parseInt(data['age']);
     const documents = await Customers.find({ user_name: data['user_name']});
     if (documents.length > 0) {
         res.send("User already exists");
     }
-
-    let hashedpwd = bcrypt.hashSync(data['password'], saltRounds)
-
-    // Creating a new instance of the Customers model with data from the request
-    const customer = new Customers({
-        "user_name": data['user_name'],
-        "age": data['age'],
-        "password": hashedpwd,
-        "email": data['email']
-    });
-
-    // Saving the new customer to the MongoDB 'customers' collection
-    await customer.save();
-
-    res.send("Customer added successfully")
+    try {
+        if (age < 21) {
+            throw new ValidationError("Customer Under required age limit");
+        }
+ 
+        const customer = new Customers({
+            "user_name": data['user_name'],
+            "age": age,
+            "password": data['password'],
+            "email": data['email']
+        });
+ 
+        await customer.save();
+ 
+        res.send("Customer added successfully");
+    } catch (error) {
+        next(error);
+    }
 });
 
 
@@ -107,6 +109,13 @@ app.post('/api/add_customer', async (req, res) => {
 app.get('/', async (req, res) => {
     res.sendFile(path.join(__dirname, 'frontend', 'home.html'));
 });
+
+app.all("*",(req,res,next)=>{
+	const err = new Error(`Cannot find the URL ${req.originalUrl} in this application. Please check.`);
+	err.status = "Endpoint Failure";
+	err.statusCode = 404;
+	next(err);
+})
 
 // Starting the server and listening on the specified port
 app.listen(port, () => {
